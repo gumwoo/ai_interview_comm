@@ -1,5 +1,7 @@
 # AI Voice Interview
 
+> 이 저장소는 개인용 [ai_interview](https://github.com/gumwoo/ai_interview)를 일반 취업 준비생용 서비스로 바꾸는 작업 저장소입니다. 지금 코드는 개인용 앱과 같고, 함께 설치하고 실행할 수 있게 앱 ID와 서버 포트(18090)만 다릅니다. 아래 설명은 개인용 앱 기준입니다.
+
 평일 아침 전화처럼 울리는 알림을 받으면, AI가 음성으로 기술 면접을 진행하는 개인용 Android 앱입니다. 질문은 제가 만든 프로젝트 [FlowTicket](https://github.com/gumwoo/first_come-first_served)의 설계 기록과 장애 기록에서 나옵니다.
 
 폴드에서 말로 면접을 끝까지 진행하고, 틀렸거나 일부만 맞힌 내용은 다음 면접에서 다시 묻습니다.
@@ -86,10 +88,10 @@ docker compose -f infra/compose.yaml up -d --build
 ```
 
 ```bash
-curl http://localhost:18080/api/v1/health
+curl http://localhost:18090/api/v1/health
 ```
 
-환경 변수 `SPRING_PROFILES_ACTIVE=dev`를 주고 띄우면 `http://localhost:18080/dev/console`에서 브라우저로 면접을 시험할 수 있습니다.
+환경 변수 `SPRING_PROFILES_ACTIVE=dev`를 주고 띄우면 `http://localhost:18090/dev/console`에서 브라우저로 면접을 시험할 수 있습니다.
 
 테스트는 Testcontainers로 실제 PostgreSQL을 띄워 실행합니다.
 

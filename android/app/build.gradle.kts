@@ -9,7 +9,7 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "io.github.gumwoo.aiinterview"
+        applicationId = "io.github.gumwoo.aiinterview.comm"
         minSdk = 34
         targetSdk = 37
         versionCode = 1

@@ -29,7 +29,7 @@ PK는 `bigint`(`GENERATED ALWAYS AS IDENTITY`)로 하고, 앱이 만드는 `clie
 
 ## Docker Compose
 
-- 포트는 `127.0.0.1`에만 묶는다. 예: `127.0.0.1:18080:8080`. 외부 접근은 `tailscale serve`를 거친다.
+- 포트는 `127.0.0.1`에만 묶는다. 예: `127.0.0.1:18090:8080`. 외부 접근은 `tailscale serve`를 거친다.
 - DB 포트는 필요한 경우에만 `127.0.0.1`로 연다. 백엔드는 Compose 네트워크로 접속한다.
 - 이미지 태그를 고정한다. `latest`를 쓰지 않는다.
 - 앱 컨테이너는 non-root로 실행하고 `no-new-privileges:true`를 설정한다.
