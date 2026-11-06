@@ -1,6 +1,6 @@
 # Git·이슈·PR 규칙
 
-혼자 쓰는 공개 저장소 [gumwoo/ai_interview](https://github.com/gumwoo/ai_interview) 기준이다.
+공개 저장소 [gumwoo/ai_interview_comm](https://github.com/gumwoo/ai_interview_comm) 기준이다.
 
 ## 이슈
 
