@@ -6,6 +6,8 @@
 ## 문서
 
 - 상용화 방향과 단계별 완료 기준: 상용화 마스터플랜 v1.0(2026-11-03). 아직 저장소에 넣지 않았으므로, 필요하면 사용자에게 받은 내용을 기준으로 한다.
+- 상용화 결정과 지금 코드에서 바꿀 곳: [docs/adr/0001-commercialization.md](docs/adr/0001-commercialization.md)
+- 상용화 전 API·스키마·테스트 기준선: [docs/baseline/](docs/baseline/README.md)
 - 기존 코드의 설계 원본: [AI_Voice_Interview_Development_Plan.md](AI_Voice_Interview_Development_Plan.md)
 - 백엔드 규칙: [docs/rules/backend.md](docs/rules/backend.md)
 - Android 규칙: [docs/rules/android.md](docs/rules/android.md)
