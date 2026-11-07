@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 import com.anthropic.client.AnthropicClient;
 import com.anthropic.errors.AnthropicInvalidDataException;
@@ -22,8 +23,12 @@ import com.anthropic.models.messages.StructuredOutputConfig;
 import com.anthropic.models.messages.StructuredTextBlock;
 import com.anthropic.models.messages.Usage;
 import io.github.gumwoo.aiinterview.application.llm.InterviewLlm;
+import io.github.gumwoo.aiinterview.application.llm.LlmCallContext;
 import io.github.gumwoo.aiinterview.application.llm.LlmException;
 import io.github.gumwoo.aiinterview.application.usage.ApiUsageService;
+import io.github.gumwoo.aiinterview.application.usage.TokenUsage;
+import io.github.gumwoo.aiinterview.domain.usage.ApiUsageLog.Outcome;
+import io.github.gumwoo.aiinterview.domain.usage.ApiUsageLog.Task;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -49,21 +54,18 @@ public class ClaudeClientAdapter implements InterviewLlm {
 	}
 
 	@Override
-	public GeneratedQuestion generateQuestion(QuestionRequest request, Long sessionId) {
+	public GeneratedQuestion generateQuestion(QuestionRequest request, LlmCallContext context) {
 		String userMessage = """
 				<topic>%s</topic>
 				<difficulty>%s</difficulty>
 				<recent_concepts>%s</recent_concepts>
 				""".formatted(request.topic(), request.difficulty(), String.join(", ", request.recentConcepts()));
-		GeneratedQuestion question = call(questionSystemPrompt, userMessage, GeneratedQuestion.class, sessionId);
-		requireText(question.conceptKey(), "conceptKey");
-		requireText(question.question(), "question");
-		requireNotEmpty(question.expectedPoints(), "expectedPoints");
-		return question;
+		return call(Task.QUESTION_GENERATION, questionSystemPrompt, userMessage, GeneratedQuestion.class, context,
+				ClaudeClientAdapter::validateQuestion);
 	}
 
 	@Override
-	public GradingResult gradeAnswer(GradingRequest request, Long sessionId) {
+	public GradingResult gradeAnswer(GradingRequest request, LlmCallContext context) {
 		String userMessage = """
 				<question>%s</question>
 				<expected_points>%s</expected_points>
@@ -72,7 +74,17 @@ public class ClaudeClientAdapter implements InterviewLlm {
 				<answer>%s</answer>
 				""".formatted(request.question(), String.join("\n", request.expectedPoints()),
 				String.join("\n", request.commonMistakes()), request.followUpAllowed(), request.answer());
-		GradingResult result = call(gradingSystemPrompt, userMessage, GradingResult.class, sessionId);
+		return call(Task.GRADING, gradingSystemPrompt, userMessage, GradingResult.class, context,
+				ClaudeClientAdapter::validateGrading);
+	}
+
+	private static void validateQuestion(GeneratedQuestion question) {
+		requireText(question.conceptKey(), "conceptKey");
+		requireText(question.question(), "question");
+		requireNotEmpty(question.expectedPoints(), "expectedPoints");
+	}
+
+	private static void validateGrading(GradingResult result) {
 		requireText(result.feedbackToSpeak(), "feedbackToSpeak");
 		if (result.verdict() == null || result.nextAction() == null) {
 			throw invalid("verdict와 nextAction이 필요합니다");
@@ -81,20 +93,74 @@ public class ClaudeClientAdapter implements InterviewLlm {
 			requireText(result.followUpQuestion(), "followUpQuestion");
 			requireNotEmpty(result.followUpExpectedPoints(), "followUpExpectedPoints");
 		}
-		return result;
 	}
 
-	private <T> T call(String systemPrompt, String userMessage, Class<T> responseType, Long sessionId) {
+	/**
+	 * 호출 한 번을 성공 여부와 관계없이 사용량 로그에 남긴다. 상한에 걸려 호출하지 않았으면 남기지 않는다.
+	 * 지연 시간은 SDK 재시도를 포함한 전체 시간이다.
+	 */
+	private <T> T call(Task task, String systemPrompt, String userMessage, Class<T> responseType,
+			LlmCallContext context, Consumer<T> validator) {
 		if (TransactionSynchronizationManager.isActualTransactionActive()) {
 			throw new IllegalStateException("Claude 호출은 DB 트랜잭션 밖에서 해야 합니다");
 		}
 		usageService.ensureWithinDailyLimit();
 
-		StructuredMessage<T> response = send(buildParams(systemPrompt, userMessage, responseType));
+		StructuredMessageCreateParams<T> params = buildParams(systemPrompt, userMessage, responseType);
+		long startedAt = System.nanoTime();
+		TokenUsage tokens = TokenUsage.NONE;
+		T result;
+		try {
+			StructuredMessage<T> response = send(params);
+			tokens = tokens(response.usage());
+			result = read(response);
+			validator.accept(result);
+		}
+		catch (RuntimeException ex) {
+			recordFailure(task, context, ex, tokens, elapsedMs(startedAt));
+			throw ex;
+		}
+		usageService.record(task, context, Outcome.SUCCESS, tokens, elapsedMs(startedAt));
+		return result;
+	}
 
-		Usage usage = response.usage();
-		usageService.record(sessionId, usage.inputTokens(), usage.outputTokens());
+	/** 기록이 실패해도 원래 실패를 가리지 않는다. */
+	private void recordFailure(Task task, LlmCallContext context, RuntimeException failure, TokenUsage tokens,
+			long latencyMs) {
+		try {
+			usageService.record(task, context, outcome(failure), tokens, latencyMs);
+		}
+		catch (RuntimeException ex) {
+			failure.addSuppressed(ex);
+		}
+	}
 
+	private static Outcome outcome(RuntimeException failure) {
+		if (failure instanceof LlmException.Refused) {
+			return Outcome.REFUSED;
+		}
+		if (failure instanceof LlmException.InvalidResponse) {
+			return Outcome.INVALID_RESPONSE;
+		}
+		if (failure instanceof LlmException.Unavailable) {
+			return Outcome.UNAVAILABLE;
+		}
+		if (failure instanceof LlmException.Rejected) {
+			return Outcome.REJECTED;
+		}
+		return Outcome.ERROR;
+	}
+
+	private static TokenUsage tokens(Usage usage) {
+		return new TokenUsage(usage.inputTokens(), usage.outputTokens(), usage.cacheCreationInputTokens().orElse(0L),
+				usage.cacheReadInputTokens().orElse(0L));
+	}
+
+	private static long elapsedMs(long startedAt) {
+		return (System.nanoTime() - startedAt) / 1_000_000;
+	}
+
+	private static <T> T read(StructuredMessage<T> response) {
 		StopReason stopReason = response.stopReason().orElse(null);
 		if (StopReason.REFUSAL.equals(stopReason)) {
 			throw new LlmException.Refused("모델이 답변을 거부했습니다");
@@ -132,7 +198,7 @@ public class ClaudeClientAdapter implements InterviewLlm {
 		}
 	}
 
-	private <T> T extract(StructuredMessage<T> response) {
+	private static <T> T extract(StructuredMessage<T> response) {
 		try {
 			return response.content()
 				.stream()

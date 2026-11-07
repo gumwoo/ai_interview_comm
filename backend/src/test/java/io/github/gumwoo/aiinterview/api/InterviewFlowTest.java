@@ -2,6 +2,7 @@ package io.github.gumwoo.aiinterview.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
@@ -35,10 +36,15 @@ import io.github.gumwoo.aiinterview.application.llm.InterviewLlm.GeneratedQuesti
 import io.github.gumwoo.aiinterview.application.llm.InterviewLlm.GradingResult;
 import io.github.gumwoo.aiinterview.application.llm.InterviewLlm.NextAction;
 import io.github.gumwoo.aiinterview.application.llm.InterviewLlm.Verdict;
+import io.github.gumwoo.aiinterview.application.llm.LlmCallContext;
 import io.github.gumwoo.aiinterview.application.llm.LlmException;
+import io.github.gumwoo.aiinterview.application.usage.ApiUsageService;
+import io.github.gumwoo.aiinterview.application.usage.TokenUsage;
 import io.github.gumwoo.aiinterview.domain.question.QuestionBankItem;
 import io.github.gumwoo.aiinterview.domain.question.QuestionBankItem.QuestionOrigin;
 import io.github.gumwoo.aiinterview.domain.question.QuestionBankItem.ReferencePoints;
+import io.github.gumwoo.aiinterview.domain.usage.ApiUsageLog.Outcome;
+import io.github.gumwoo.aiinterview.domain.usage.ApiUsageLog.Task;
 import io.github.gumwoo.aiinterview.infrastructure.persistence.QuestionBankRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -78,6 +84,9 @@ class InterviewFlowTest {
 	@Autowired
 	private MutableClock clock;
 
+	@Autowired
+	private ApiUsageService usage;
+
 	@MockitoBean
 	private InterviewLlm llm;
 
@@ -111,6 +120,38 @@ class InterviewFlowTest {
 		assertThat(questions.findByQuestionText("생성한 질문")).get()
 			.extracting(QuestionBankItem::getOrigin)
 			.isEqualTo(QuestionOrigin.GENERATED);
+	}
+
+	@Test
+	void should_attach_first_question_usage_to_created_session() throws Exception {
+		UUID requestId = UUID.randomUUID();
+		given(llm.generateQuestion(any(), any())).willAnswer((call) -> {
+			usage.record(Task.QUESTION_GENERATION, call.getArgument(1), Outcome.SUCCESS, new TokenUsage(10, 20, 0, 0),
+					5);
+			return generated("generated-concept", "생성한 질문");
+		});
+
+		Map<String, Object> session = start("MANUAL", requestId);
+
+		verify(llm).generateQuestion(any(), eq(new LlmCallContext(null, requestId)));
+		assertThat(jdbc.queryForObject("SELECT session_id FROM api_usage_log WHERE request_id = ?", Long.class,
+				requestId))
+			.isEqualTo(sessionId(session));
+	}
+
+	@Test
+	void should_pass_session_and_answer_request_to_grading_and_next_question() throws Exception {
+		seed("c1", "질문1");
+		Map<String, Object> session = start("MANUAL", UUID.randomUUID());
+		UUID requestId = UUID.randomUUID();
+		given(llm.gradeAnswer(any(), any())).willReturn(result(Verdict.CORRECT, NextAction.NEXT_QUESTION, ""));
+		given(llm.generateQuestion(any(), any())).willAnswer((call) -> generated("c9", "생성한 질문"));
+
+		answer(session, turnId(session), "답변", requestId);
+
+		LlmCallContext expected = new LlmCallContext(sessionId(session), requestId);
+		verify(llm).gradeAnswer(any(), eq(expected));
+		verify(llm).generateQuestion(any(), eq(expected));
 	}
 
 	@Test
@@ -666,6 +707,10 @@ class InterviewFlowTest {
 
 	private static String path(Map<String, Object> session) {
 		return "/api/v1/sessions/" + session.get("sessionId");
+	}
+
+	private static long sessionId(Map<String, Object> session) {
+		return ((Number) session.get("sessionId")).longValue();
 	}
 
 	private static long turnId(Map<String, Object> session) {

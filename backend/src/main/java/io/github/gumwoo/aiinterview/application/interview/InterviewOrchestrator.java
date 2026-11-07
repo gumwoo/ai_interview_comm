@@ -19,6 +19,7 @@ import io.github.gumwoo.aiinterview.application.interview.InterviewModels.Summar
 import io.github.gumwoo.aiinterview.application.llm.InterviewLlm.GradingRequest;
 import io.github.gumwoo.aiinterview.application.llm.InterviewLlm.GradingResult;
 import io.github.gumwoo.aiinterview.application.llm.InterviewLlm.Verdict;
+import io.github.gumwoo.aiinterview.application.llm.LlmCallContext;
 import io.github.gumwoo.aiinterview.application.llm.LlmException;
 import io.github.gumwoo.aiinterview.domain.session.InterviewSession;
 import io.github.gumwoo.aiinterview.domain.session.SessionTurn;
@@ -57,7 +58,7 @@ public class InterviewOrchestrator {
 			return view(existing.get());
 		}
 		PlannedQuestion question = planner.next(command.topics(), command.difficulty(), command.reviewRatio(),
-				QuestionPlanner.NO_SESSION, List.of());
+				QuestionPlanner.NO_SESSION, command.clientRequestId(), List.of());
 		try {
 			return view(store.createSession(command, question));
 		}
@@ -97,7 +98,8 @@ public class InterviewOrchestrator {
 		GradingResult result;
 		try {
 			result = grader.grade(new GradingRequest(turn.getQuestionText(), turn.getExpectedPoints(),
-					turn.getCommonMistakes(), turn.getAnswerText(), followUps.canFollowUp(turn)), sessionId);
+					turn.getCommonMistakes(), turn.getAnswerText(), followUps.canFollowUp(turn)),
+					new LlmCallContext(sessionId, turn.getClientRequestId()));
 		}
 		catch (LlmException ex) {
 			store.markFailed(sessionId, turn.getId());
@@ -132,7 +134,7 @@ public class InterviewOrchestrator {
 					clock.instant());
 		}
 		PlannedQuestion question = planner.next(session.getTopics(), session.getDifficulty(), session.getReviewRatio(),
-				session.getId(), store.getTurns(session.getId()));
+				session.getId(), answered.getClientRequestId(), store.getTurns(session.getId()));
 		return InterviewStore.newTurn(session.getId(), nextTurnNo, question, clock.instant());
 	}
 

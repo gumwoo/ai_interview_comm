@@ -7,6 +7,7 @@ import io.github.gumwoo.aiinterview.application.llm.InterviewLlm.GradingRequest;
 import io.github.gumwoo.aiinterview.application.llm.InterviewLlm.GradingResult;
 import io.github.gumwoo.aiinterview.application.llm.InterviewLlm.NextAction;
 import io.github.gumwoo.aiinterview.application.llm.InterviewLlm.Verdict;
+import io.github.gumwoo.aiinterview.application.llm.LlmCallContext;
 import io.github.gumwoo.aiinterview.application.llm.LlmException;
 import org.springframework.stereotype.Component;
 
@@ -24,9 +25,9 @@ public class AnswerGrader {
 		this.llm = llm;
 	}
 
-	public GradingResult grade(GradingRequest request, Long sessionId) {
+	public GradingResult grade(GradingRequest request, LlmCallContext context) {
 		try {
-			return llm.gradeAnswer(request, sessionId);
+			return llm.gradeAnswer(request, context);
 		}
 		catch (LlmException.Refused ex) {
 			return new GradingResult(Verdict.UNDETERMINED, 0, List.of(), List.of(), List.of(), REFUSED_FEEDBACK,
