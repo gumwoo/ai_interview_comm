@@ -15,6 +15,7 @@ import io.github.gumwoo.aiinterview.application.llm.InterviewLlm;
 import io.github.gumwoo.aiinterview.application.llm.InterviewLlm.GradingRequest;
 import io.github.gumwoo.aiinterview.application.llm.InterviewLlm.GradingResult;
 import io.github.gumwoo.aiinterview.application.llm.InterviewLlm.Verdict;
+import io.github.gumwoo.aiinterview.application.llm.LlmCallContext;
 import io.github.gumwoo.aiinterview.application.llm.LlmException;
 import io.github.gumwoo.aiinterview.domain.usage.ApiUsageLog;
 import io.github.gumwoo.aiinterview.eval.EvalCases.EvalCase;
@@ -85,7 +86,7 @@ class GradingEvalRunner {
 		for (int run = 0; run < RUNS_PER_CASE; run++) {
 			long start = System.nanoTime();
 			try {
-				GradingResult result = llm.gradeAnswer(request, null);
+				GradingResult result = llm.gradeAnswer(request, LlmCallContext.NONE);
 				verdicts.add(result.verdict());
 				lastFeedback = result.feedbackToSpeak() + " / 다음: " + result.nextAction() + " / 질문: "
 						+ result.followUpQuestion();

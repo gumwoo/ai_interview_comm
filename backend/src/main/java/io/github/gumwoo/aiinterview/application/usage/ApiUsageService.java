@@ -7,8 +7,11 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 
+import io.github.gumwoo.aiinterview.application.llm.LlmCallContext;
 import io.github.gumwoo.aiinterview.application.llm.LlmException;
 import io.github.gumwoo.aiinterview.domain.usage.ApiUsageLog;
+import io.github.gumwoo.aiinterview.domain.usage.ApiUsageLog.Outcome;
+import io.github.gumwoo.aiinterview.domain.usage.ApiUsageLog.Task;
 import io.github.gumwoo.aiinterview.infrastructure.claude.ClaudeProperties;
 import io.github.gumwoo.aiinterview.infrastructure.persistence.ApiUsageLogRepository;
 import io.github.gumwoo.aiinterview.infrastructure.persistence.ApiUsageLogRepository.TokenTotals;
@@ -42,12 +45,16 @@ public class ApiUsageService {
 		}
 	}
 
+	/** Claude 호출 한 번을 기록한다. 실패한 호출도 기록하고, 응답을 받지 못했으면 토큰은 0이다. */
 	@Transactional
-	public void record(Long sessionId, long inputTokens, long outputTokens) {
-		repository.save(new ApiUsageLog(sessionId, properties.model(), Math.toIntExact(inputTokens),
-				Math.toIntExact(outputTokens), estimateCost(inputTokens, outputTokens), clock.instant()));
+	public void record(Task task, LlmCallContext context, Outcome outcome, TokenUsage tokens, long latencyMs) {
+		repository.save(new ApiUsageLog(context.sessionId(), context.requestId(), task, outcome, properties.model(),
+				Math.toIntExact(tokens.inputTokens()), Math.toIntExact(tokens.outputTokens()),
+				Math.toIntExact(tokens.cacheCreationInputTokens()), Math.toIntExact(tokens.cacheReadInputTokens()),
+				estimateCost(tokens.inputTokens(), tokens.outputTokens()), Math.toIntExact(latencyMs), clock.instant()));
 	}
 
+	/** 프롬프트 캐시를 쓰지 않으므로 캐시 토큰은 비용에 넣지 않는다. 캐시를 쓰면 캐시 가격을 함께 넣어야 한다. */
 	private BigDecimal estimateCost(long inputTokens, long outputTokens) {
 		ClaudeProperties.ModelPrice price = properties.currentPrice();
 		BigDecimal input = price.inputPerMillion().multiply(BigDecimal.valueOf(inputTokens));

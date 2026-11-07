@@ -21,6 +21,7 @@ import io.github.gumwoo.aiinterview.domain.question.QuestionBankItem;
 import io.github.gumwoo.aiinterview.domain.session.InterviewSession;
 import io.github.gumwoo.aiinterview.domain.session.SessionTurn;
 import io.github.gumwoo.aiinterview.domain.session.SessionTurn.ProcessingStatus;
+import io.github.gumwoo.aiinterview.infrastructure.persistence.ApiUsageLogRepository;
 import io.github.gumwoo.aiinterview.infrastructure.persistence.InterviewSessionRepository;
 import io.github.gumwoo.aiinterview.infrastructure.persistence.SessionTurnRepository;
 import org.springframework.stereotype.Service;
@@ -36,14 +37,16 @@ public class InterviewStore {
 	private final InterviewSessionRepository sessions;
 	private final SessionTurnRepository turns;
 	private final ReviewScheduler reviews;
+	private final ApiUsageLogRepository usageLogs;
 	private final InterviewProperties properties;
 	private final Clock clock;
 
 	public InterviewStore(InterviewSessionRepository sessions, SessionTurnRepository turns, ReviewScheduler reviews,
-			InterviewProperties properties, Clock clock) {
+			ApiUsageLogRepository usageLogs, InterviewProperties properties, Clock clock) {
 		this.sessions = sessions;
 		this.turns = turns;
 		this.reviews = reviews;
+		this.usageLogs = usageLogs;
 		this.properties = properties;
 		this.clock = clock;
 	}
@@ -99,12 +102,14 @@ public class InterviewStore {
 		return counts;
 	}
 
+	/** 세션과 첫 턴을 만들고, 세션이 없을 때 부른 첫 질문 생성 호출의 사용량 로그를 세션에 붙인다. */
 	@Transactional
 	public InterviewSession createSession(StartSession command, PlannedQuestion question) {
 		InterviewSession session = sessions.saveAndFlush(new InterviewSession(command.clientRequestId(),
 				command.scheduledDate(), command.source(), command.topics(), command.difficulty(),
 				command.durationMinutes(), command.reviewRatio(), clock.instant()));
 		turns.save(newTurn(session.getId(), 1, question, clock.instant()));
+		usageLogs.attachToSession(command.clientRequestId(), session.getId());
 		return session;
 	}
 

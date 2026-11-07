@@ -4,8 +4,10 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import io.github.gumwoo.aiinterview.application.llm.InterviewLlm;
+import io.github.gumwoo.aiinterview.application.llm.LlmCallContext;
 import io.github.gumwoo.aiinterview.domain.question.QuestionBankItem;
 import io.github.gumwoo.aiinterview.domain.question.QuestionBankItem.QuestionOrigin;
 import io.github.gumwoo.aiinterview.domain.question.QuestionBankItem.ReferencePoints;
@@ -35,8 +37,9 @@ public class QuestionPlanner {
 		this.clock = clock;
 	}
 
+	/** {@code requestId}는 이 질문을 정하게 만든 앱 요청이다. 생성 호출의 사용량 로그에 남긴다. */
 	public PlannedQuestion next(List<String> topics, String difficulty, BigDecimal reviewRatio, long sessionId,
-			List<SessionTurn> turns) {
+			UUID requestId, List<SessionTurn> turns) {
 		if (isReviewTurn(reviewRatio, turns)) {
 			Optional<QuestionBankItem> review = repository.pickReview(topics, difficulty, sessionId);
 			if (review.isPresent()) {
@@ -45,7 +48,7 @@ public class QuestionPlanner {
 		}
 		List<String> recentConcepts = turns.stream().map(SessionTurn::getConceptKey).distinct().toList();
 		QuestionBankItem question = repository.pickNext(topics, difficulty, sessionId)
-			.orElseGet(() -> generate(topics, difficulty, sessionId, recentConcepts));
+			.orElseGet(() -> generate(topics, difficulty, sessionId, requestId, recentConcepts));
 		return new PlannedQuestion(question, false);
 	}
 
@@ -56,12 +59,12 @@ public class QuestionPlanner {
 		return BigDecimal.valueOf(reviews).compareTo(reviewRatio.multiply(BigDecimal.valueOf(asked.size() + 1L))) < 0;
 	}
 
-	private QuestionBankItem generate(List<String> topics, String difficulty, long sessionId,
+	private QuestionBankItem generate(List<String> topics, String difficulty, long sessionId, UUID requestId,
 			List<String> recentConcepts) {
 		String topic = topics.get(Math.floorMod(recentConcepts.size(), topics.size()));
 		InterviewLlm.GeneratedQuestion generated = llm.generateQuestion(
 				new InterviewLlm.QuestionRequest(topic, difficulty, recentConcepts),
-				sessionId == NO_SESSION ? null : sessionId);
+				new LlmCallContext(sessionId == NO_SESSION ? null : sessionId, requestId));
 		QuestionBankItem item = new QuestionBankItem(topic, generated.conceptKey(), difficulty, generated.question(),
 				new ReferencePoints(generated.expectedPoints(), generated.commonMistakes()), QuestionOrigin.GENERATED,
 				null, null, clock.instant());

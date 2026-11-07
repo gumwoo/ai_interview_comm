@@ -9,11 +9,11 @@ import com.fasterxml.jackson.annotation.JsonPropertyDescription;
  */
 public interface InterviewLlm {
 
-	/** 질문 하나와 채점 기준을 만든다. {@code sessionId}는 세션 밖 호출이면 null이다. */
-	GeneratedQuestion generateQuestion(QuestionRequest request, Long sessionId);
+	/** 질문 하나와 채점 기준을 만든다. {@code context}는 사용량 로그에 남긴다. */
+	GeneratedQuestion generateQuestion(QuestionRequest request, LlmCallContext context);
 
 	/** 답변을 채점하고 다음 행동과 꼬리질문을 함께 받는다. */
-	GradingResult gradeAnswer(GradingRequest request, Long sessionId);
+	GradingResult gradeAnswer(GradingRequest request, LlmCallContext context);
 
 	record QuestionRequest(String topic, String difficulty, List<String> recentConcepts) {
 	}
